@@ -135,7 +135,7 @@ class Config:
             'jira': self.integrations.jira_url and self.integrations.jira_token
         }
         
-        return integration_checks.get(integration.lower(), False)
+        return bool(integration_checks.get(integration.lower(), False))
     
     def get_enabled_integrations(self) -> list:
         """Get list of enabled integrations"""
@@ -187,7 +187,7 @@ class Config:
         """Get environment information for debugging"""
         
         return {
-            'python_version': os.sys.version,
+            'python_version': __import__('sys').version,
             'environment_variables': {
                 'DATABASE_URL': '***' if self.database.url else 'Not set',
                 'GEMINI_API_KEY': '***' if self.ai.api_key else 'Not set',

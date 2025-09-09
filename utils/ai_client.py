@@ -1,8 +1,7 @@
 import os
 import logging
 from typing import Dict, Any, Optional
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 import json
 
 class AIClient:
@@ -19,7 +18,8 @@ class AIClient:
             self.client = None
         else:
             try:
-                self.client = genai.Client(api_key=self.api_key)
+                genai.configure(api_key=self.api_key)
+                self.client = genai
                 self.logger.info("Gemini AI client initialized successfully")
             except Exception as e:
                 self.logger.error(f"Failed to initialize Gemini client: {str(e)}")
@@ -33,7 +33,7 @@ class AIClient:
         self.max_retries = 3
         self.timeout = 30
     
-    async def generate_response(self, prompt: str, model: str = None, **kwargs) -> str:
+    def generate_response(self, prompt: str, model: str = None, **kwargs) -> str:
         """
         Generate AI response for given prompt
         
@@ -51,15 +51,13 @@ class AIClient:
         model_name = model or self.default_model
         
         try:
-            response = self.client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=kwargs.get('temperature', 0.7),
-                    max_output_tokens=kwargs.get('max_tokens', 4000),
-                    top_p=kwargs.get('top_p', 0.95)
-                )
+            model = self.client.GenerativeModel(model_name)
+            generation_config = genai.types.GenerationConfig(
+                temperature=kwargs.get('temperature', 0.7),
+                max_output_tokens=kwargs.get('max_tokens', 4000),
+                top_p=kwargs.get('top_p', 0.95)
             )
+            response = model.generate_content(prompt, generation_config=generation_config)
             
             if response and response.text:
                 return response.text
@@ -73,13 +71,13 @@ class AIClient:
             if model_name != self.fallback_model:
                 self.logger.info(f"Retrying with fallback model: {self.fallback_model}")
                 try:
-                    return await self.generate_response(prompt, self.fallback_model, **kwargs)
+                    return self.generate_response(prompt, self.fallback_model, **kwargs)
                 except Exception as fallback_error:
                     self.logger.error(f"Fallback model also failed: {str(fallback_error)}")
             
             raise Exception(f"AI response generation failed: {str(e)}")
     
-    async def generate_structured_response(self, prompt: str, response_schema: type = None, model: str = None) -> Dict[str, Any]:
+    def generate_structured_response(self, prompt: str, response_schema = None, model: str = None) -> Dict[str, Any]:
         """
         Generate structured JSON response
         
@@ -97,19 +95,14 @@ class AIClient:
         model_name = model or self.default_model
         
         try:
-            config = types.GenerateContentConfig(
-                response_mime_type="application/json",
+            model = self.client.GenerativeModel(model_name)
+            generation_config = genai.types.GenerationConfig(
                 temperature=0.3  # Lower temperature for structured output
             )
             
-            if response_schema:
-                config.response_schema = response_schema
-            
-            response = self.client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=config
-            )
+            # Add JSON instruction to prompt
+            json_prompt = f"{prompt}\n\nPlease respond with valid JSON format."
+            response = model.generate_content(json_prompt, generation_config=generation_config)
             
             if response and response.text:
                 try:
@@ -145,7 +138,7 @@ class AIClient:
             self.logger.error(f"Failed to extract JSON from text: {str(e)}")
             return {"error": "JSON extraction failed", "raw_response": text}
     
-    async def analyze_image(self, image_path: str, prompt: str = None) -> str:
+    def analyze_image(self, image_path: str, prompt: str = None) -> str:
         """
         Analyze image with AI
         
@@ -165,16 +158,13 @@ class AIClient:
                 
             analysis_prompt = prompt or "Analyze this image in detail and describe its key elements, context, and any notable aspects."
             
-            response = self.client.models.generate_content(
-                model="gemini-2.5-pro",  # Use pro model for image analysis
-                contents=[
-                    types.Part.from_bytes(
-                        data=image_bytes,
-                        mime_type="image/jpeg",
-                    ),
-                    analysis_prompt
-                ]
-            )
+            # Create PIL Image for Gemini
+            from PIL import Image
+            import io
+            image = Image.open(io.BytesIO(image_bytes))
+            
+            model = self.client.GenerativeModel("gemini-1.5-pro")  # Use pro model for image analysis
+            response = model.generate_content([analysis_prompt, image])
             
             return response.text if response.text else "No analysis available"
             
@@ -194,10 +184,8 @@ class AIClient:
         
         try:
             # Simple test request
-            response = self.client.models.generate_content(
-                model=self.default_model,
-                contents="Hello"
-            )
+            model = self.client.GenerativeModel(self.default_model)
+            response = model.generate_content("Hello")
             return bool(response and response.text)
             
         except Exception as e:
@@ -286,7 +274,7 @@ class AIClient:
         
         return limits.get(model_name, limits["gemini-2.5-flash"])
     
-    async def batch_generate(self, prompts: list, model: str = None, **kwargs) -> list:
+    def batch_generate(self, prompts: list, model: str = None, **kwargs) -> list:
         """
         Generate responses for multiple prompts
         
@@ -302,7 +290,7 @@ class AIClient:
         
         for prompt in prompts:
             try:
-                response = await self.generate_response(prompt, model, **kwargs)
+                response = self.generate_response(prompt, model, **kwargs)
                 responses.append(response)
             except Exception as e:
                 self.logger.error(f"Error in batch generation for prompt: {str(e)}")
