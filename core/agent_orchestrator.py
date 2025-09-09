@@ -201,6 +201,159 @@ class AgentOrchestrator:
         import uuid
         return str(uuid.uuid4())[:8]
     
+    def process_with_agent(self, agent_name: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Process input using specified agent with comprehensive error handling"""
+        start_time = datetime.now()
+        
+        try:
+            # Validate agent exists
+            if agent_name not in self.agents:
+                error_msg = f"Agent '{agent_name}' not found. Available agents: {list(self.agents.keys())}"
+                self.logger.error(error_msg)
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'error_type': 'agent_not_found',
+                    'agent': agent_name,
+                    'suggestions': self._suggest_similar_agents(agent_name)
+                }
+            
+            # Validate input data
+            if not input_data:
+                self.logger.warning(f"Empty input data provided to agent {agent_name}")
+                input_data = {}
+            
+            agent = self.agents[agent_name]
+            
+            # Check if agent is healthy/available
+            if hasattr(agent, 'is_available') and not agent.is_available():
+                error_msg = f"Agent '{agent_name}' is currently unavailable"
+                self.logger.warning(error_msg)
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'error_type': 'agent_unavailable',
+                    'agent': agent_name,
+                    'retry_suggestion': 'Please try again in a few moments'
+                }
+            
+            # Process with the agent
+            result = agent.process(input_data)
+            
+            # Log successful execution
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            try:
+                if hasattr(self, 'db_manager'):
+                    self.db_manager.log_agent_execution({
+                        'agent_name': agent_name,
+                        'action': 'process',
+                        'input_data': input_data,
+                        'output_data': result,
+                        'success': True,
+                        'execution_time': int(execution_time)
+                    })
+            except Exception as db_error:
+                self.logger.warning(f"Failed to log execution to database: {str(db_error)}")
+            
+            return {
+                'success': True,
+                'result': result,
+                'agent': agent_name,
+                'execution_time': execution_time,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            # Log failed execution with detailed error info
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            error_msg = str(e)
+            error_type = type(e).__name__
+            
+            try:
+                if hasattr(self, 'db_manager'):
+                    self.db_manager.log_agent_execution({
+                        'agent_name': agent_name,
+                        'action': 'process',
+                        'input_data': input_data,
+                        'output_data': None,
+                        'success': False,
+                        'error_message': error_msg,
+                        'execution_time': int(execution_time)
+                    })
+            except Exception:
+                pass  # Don't fail on logging errors
+            
+            self.logger.error(f"Error in agent {agent_name}: {error_msg}")
+            
+            # Provide user-friendly error messages
+            user_friendly_error = self._get_user_friendly_error(error_type, error_msg)
+            
+            return {
+                'success': False,
+                'error': user_friendly_error,
+                'error_type': error_type,
+                'technical_error': error_msg,
+                'agent': agent_name,
+                'execution_time': execution_time,
+                'suggestions': self._get_error_suggestions(error_type, agent_name)
+            }
+    
+    def _suggest_similar_agents(self, agent_name: str) -> List[str]:
+        """Suggest similar agent names in case of typos"""
+        available_agents = list(self.agents.keys())
+        suggestions = []
+        
+        # Simple similarity check
+        for available in available_agents:
+            if agent_name.lower() in available.lower() or available.lower() in agent_name.lower():
+                suggestions.append(available)
+        
+        return suggestions[:3]  # Return top 3 suggestions
+    
+    def _get_user_friendly_error(self, error_type: str, error_msg: str) -> str:
+        """Convert technical errors to user-friendly messages"""
+        error_mappings = {
+            'APIError': 'There was an issue with the AI service. Please try again.',
+            'ConnectionError': 'Unable to connect to external services. Please check your internet connection.',
+            'ValidationError': 'The input provided is not valid. Please check your data and try again.',
+            'TimeoutError': 'The operation took too long to complete. Please try again with simpler input.',
+            'PermissionError': 'Permission denied. Please check your access rights.',
+            'JSONDecodeError': 'Invalid data format received. Please try again.',
+            'KeyError': 'Required information is missing from the input.',
+        }
+        
+        for error_pattern, friendly_msg in error_mappings.items():
+            if error_pattern in error_type:
+                return friendly_msg
+        
+        # Generic fallback
+        return 'An unexpected error occurred. Please try again or contact support if the issue persists.'
+    
+    def _get_error_suggestions(self, error_type: str, agent_name: str) -> List[str]:
+        """Get suggestions for resolving specific errors"""
+        suggestions = []
+        
+        if 'API' in error_type or 'Connection' in error_type:
+            suggestions.extend([
+                'Check your internet connection',
+                'Verify API keys are set correctly',
+                'Try again in a few moments'
+            ])
+        elif 'Validation' in error_type or 'Key' in error_type:
+            suggestions.extend([
+                'Check that all required fields are filled',
+                'Verify the input format is correct',
+                'Review the example data format'
+            ])
+        elif 'Timeout' in error_type:
+            suggestions.extend([
+                'Try with shorter or simpler input',
+                'Break large requests into smaller parts',
+                'Check system performance and try again'
+            ])
+        
+        return suggestions
+
     def _log_agent_execution(self, agent_name: str, task_data: Dict, result: Dict):
         """Log agent execution for monitoring"""
         log_entry = {

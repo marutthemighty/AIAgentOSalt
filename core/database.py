@@ -23,30 +23,39 @@ class DatabaseManager:
         self._create_tables()
     
     def _initialize_connection(self):
-        """Initialize database connection (Supabase or SQLite fallback)"""
+        """Initialize database connection (PostgreSQL or SQLite fallback)"""
         try:
-            # Try Supabase connection first
+            # Try PostgreSQL connection first
             database_url = os.getenv('DATABASE_URL')
-            if database_url and 'supabase' in database_url:
+            if database_url:
                 self.engine = create_engine(database_url)
                 # Test connection
                 with self.engine.connect() as conn:
                     conn.execute(text("SELECT 1"))
                 self.is_online = True
-                self.logger.info("Connected to Supabase database")
+                self.logger.info("Connected to PostgreSQL database")
                 return
         except Exception as e:
-            self.logger.warning(f"Failed to connect to Supabase: {str(e)}")
+            self.logger.warning(f"Failed to connect to PostgreSQL: {str(e)}")
         
         try:
             # Fallback to local SQLite
             db_path = os.path.join(os.getcwd(), 'creative_workflow.db')
             self.engine = create_engine(f'sqlite:///{db_path}')
-            self.is_online = False
-            self.logger.info("Connected to local SQLite database")
+            # Test SQLite connection
+            if self.engine:
+                with self.engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                self.is_online = False
+                self.logger.info("Connected to local SQLite database")
+            else:
+                raise Exception("Failed to create SQLite engine")
         except Exception as e:
             self.logger.error(f"Failed to connect to any database: {str(e)}")
-            raise
+            # Create a minimal in-memory fallback
+            self.engine = create_engine("sqlite:///:memory:")
+            self.is_online = False
+            self.logger.warning("Using in-memory SQLite database as last resort")
     
     def _create_tables(self):
         """Create necessary tables if they don't exist"""
