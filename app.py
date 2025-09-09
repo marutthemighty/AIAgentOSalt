@@ -12,11 +12,13 @@ st.set_page_config(
 )
 
 # Initialize session state
-if 'orchestrator' not in st.session_state:
-    st.session_state.orchestrator = AgentOrchestrator()
-
 if 'db_manager' not in st.session_state:
     st.session_state.db_manager = DatabaseManager()
+
+if 'orchestrator' not in st.session_state:
+    st.session_state.orchestrator = AgentOrchestrator()
+    # Connect database manager to orchestrator
+    st.session_state.orchestrator.db_manager = st.session_state.db_manager
 
 def main():
     """Main application entry point"""
