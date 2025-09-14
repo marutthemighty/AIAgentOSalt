@@ -5,6 +5,7 @@ import json
 import uuid
 import secrets
 import requests
+import urllib.parse
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from sqlalchemy import text
@@ -68,7 +69,7 @@ class OAuthManager:
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         is_active BOOLEAN DEFAULT TRUE,
                         token_encrypted BOOLEAN DEFAULT FALSE,
-                        pkce_verifier TEXT
+
                     )
                 """))
                 
@@ -80,7 +81,8 @@ class OAuthManager:
                         user_id TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         expires_at TIMESTAMP NOT NULL,
-                        used BOOLEAN DEFAULT FALSE
+                        used BOOLEAN DEFAULT FALSE,
+
                     )
                 """))
                 
@@ -123,7 +125,7 @@ class OAuthManager:
         elif service_name == "github":
             params["allow_signup"] = "true"
         
-        query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+        query_string = urllib.parse.urlencode(params)
         auth_url = f"{config['auth_url']}?{query_string}"
         
         return {
@@ -157,7 +159,7 @@ class OAuthManager:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         expires_at TIMESTAMP NOT NULL,
                         used BOOLEAN DEFAULT FALSE,
-                        pkce_verifier TEXT
+
                     )
                 """))
                 
@@ -208,7 +210,7 @@ class OAuthManager:
         headers = {"Accept": "application/json"}
         
         # Make token request
-        response = requests.post(config["token_url"], data=token_data, headers=headers)
+        response = requests.post(config["token_url"], data=token_data, headers=headers, timeout=30)
         response.raise_for_status()
         
         token_response = response.json()
@@ -300,7 +302,7 @@ class OAuthManager:
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         is_active BOOLEAN DEFAULT TRUE,
                         token_encrypted BOOLEAN DEFAULT FALSE,
-                        pkce_verifier TEXT
+
                     )
                 """))
                 
@@ -458,13 +460,15 @@ class OAuthManager:
             if service_name == "github":
                 response = requests.get(
                     "https://api.github.com/user",
-                    headers={"Authorization": f"Bearer {token}"}
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=30
                 )
             elif service_name == "linear":
                 response = requests.post(
                     "https://api.linear.app/graphql",
                     headers={"Authorization": f"Bearer {token}"},
-                    json={"query": "{ viewer { id name } }"}
+                    json={"query": "{ viewer { id name } }"},
+                    timeout=30
                 )
             elif service_name == "notion":
                 response = requests.get(
@@ -472,17 +476,20 @@ class OAuthManager:
                     headers={
                         "Authorization": f"Bearer {token}",
                         "Notion-Version": "2022-06-28"
-                    }
+                    },
+                    timeout=30
                 )
             elif service_name == "google":
                 response = requests.get(
                     "https://www.googleapis.com/oauth2/v2/userinfo",
-                    headers={"Authorization": f"Bearer {token}"}
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=30
                 )
             elif service_name == "slack":
                 response = requests.get(
                     "https://slack.com/api/auth.test",
-                    headers={"Authorization": f"Bearer {token}"}
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=30
                 )
             else:
                 return {"status": "error", "message": f"Unsupported service: {service_name}"}

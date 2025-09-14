@@ -16,48 +16,34 @@ class SecurityManager:
         self._initialize_encryption()
     
     def _initialize_encryption(self):
-        """Initialize encryption key from environment or generate new one"""
+        """Initialize encryption key from environment - REQUIRED for security"""
         
-        # Try to get encryption key from environment
+        # Get encryption key from environment - REQUIRED
         key_data = os.getenv('OAUTH_ENCRYPTION_KEY')
         
-        if key_data:
-            # Use existing key
-            try:
-                key = base64.urlsafe_b64decode(key_data.encode())
-                self._cipher_suite = Fernet(key)
-            except Exception:
-                # If key is invalid, generate new one
-                self._generate_new_key()
-        else:
-            # Generate new encryption key
-            self._generate_new_key()
+        if not key_data:
+            raise ValueError(
+                "OAUTH_ENCRYPTION_KEY environment variable is required for secure token storage. "
+                "Generate a secure key using: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+            )
+        
+        try:
+            # Validate and use the provided key
+            key = base64.urlsafe_b64decode(key_data.encode())
+            self._cipher_suite = Fernet(key)
+        except Exception as e:
+            raise ValueError(f"Invalid OAUTH_ENCRYPTION_KEY format. Key must be a valid Fernet key: {e}")
     
-    def _generate_new_key(self):
-        """Generate a new encryption key"""
-        
-        # Use a default password for key derivation (in production, use secure random)
-        password = os.getenv('OAUTH_MASTER_PASSWORD', 'default_creative_workflow_password').encode()
-        salt = os.getenv('OAUTH_SALT', 'creative_workflow_salt_2024').encode()
-        
-        # Derive key from password
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=salt,
-            iterations=100000,
-        )
-        key = base64.urlsafe_b64encode(kdf.derive(password))
-        self._cipher_suite = Fernet(key)
-        
-        # Store key for future use (in production, use secure key storage)
-        key_b64 = base64.urlsafe_b64encode(key).decode()
-        print(f"Generated new encryption key. Set OAUTH_ENCRYPTION_KEY={key_b64} in environment")
+    def generate_secure_key(self) -> str:
+        """Generate a new secure encryption key for initial setup"""
+        # This method is for initial key generation only
+        # The generated key should be stored securely in environment variables
+        return Fernet.generate_key().decode()
     
     def encrypt_token(self, token: str) -> str:
         """Encrypt a token for secure storage"""
         if not self._cipher_suite:
-            raise Exception("Encryption not initialized")
+            raise Exception("Encryption not initialized - OAUTH_ENCRYPTION_KEY required")
         
         if not token:
             return ""
@@ -66,8 +52,7 @@ class SecurityManager:
             encrypted_token = self._cipher_suite.encrypt(token.encode())
             return base64.urlsafe_b64encode(encrypted_token).decode()
         except Exception as e:
-            print(f"Error encrypting token: {e}")
-            return token  # Fallback to plaintext (not secure)
+            raise Exception(f"Failed to encrypt token: {e}")
     
     def decrypt_token(self, encrypted_token: str) -> str:
         """Decrypt a token for use"""

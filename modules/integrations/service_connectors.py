@@ -31,6 +31,10 @@ class BaseServiceConnector:
             headers.update(kwargs['headers'])
         kwargs['headers'] = headers
         
+        # Add default timeout if not specified
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 30
+        
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         response = requests.request(method, url, **kwargs)
         response.raise_for_status()
@@ -290,7 +294,8 @@ class GoogleConnector(BaseServiceConnector):
         response = requests.post(
             "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
             headers={"Authorization": f"Bearer {self.oauth_manager.get_connection_token(self.connection_id)}"},
-            files=files
+            files=files,
+            timeout=60  # Longer timeout for file uploads
         )
         response.raise_for_status()
         return response.json()
@@ -376,7 +381,8 @@ class SlackConnector(BaseServiceConnector):
             f"{self.base_url}/files.upload",
             headers=headers,
             files=files,
-            data=data
+            data=data,
+            timeout=60  # Longer timeout for file uploads
         )
         response.raise_for_status()
         return response.json()
